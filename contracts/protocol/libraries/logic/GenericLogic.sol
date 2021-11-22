@@ -12,6 +12,7 @@ import {WadRayMath} from '../math/WadRayMath.sol';
 import {PercentageMath} from '../math/PercentageMath.sol';
 import {IPriceOracleGetter} from '../../../interfaces/IPriceOracleGetter.sol';
 import {DataTypes} from '../types/DataTypes.sol';
+import {IAToken} from '../../../interfaces/IAToken.sol';
 
 /**
  * @title GenericLogic library
@@ -31,7 +32,7 @@ library GenericLogic {
   struct CalculateUserAccountDataVars {
     uint256 assetPrice;
     uint256 assetUnit;
-    uint256 userBalance;
+    uint256 userCollateralBalance;
     uint256 userBalanceInBaseCurrency;
     uint256 userDebt;
     uint256 userStableDebt;
@@ -107,10 +108,10 @@ library GenericLogic {
 
       if (vars.liquidationThreshold != 0 && userConfig.isUsingAsCollateral(vars.i)) {
         vars.normalizedIncome = currentReserve.getNormalizedIncome();
-        vars.userBalance = IScaledBalanceToken(currentReserve.aTokenAddress).scaledBalanceOf(user);
-        vars.userBalance = vars.userBalance.rayMul(vars.normalizedIncome);
+        vars.userCollateralBalance = IAToken(currentReserve.aTokenAddress).balanceOfCollateral(user);
+        vars.userCollateralBalance = vars.userCollateralBalance.rayMul(vars.normalizedIncome);
 
-        vars.userBalanceInBaseCurrency = vars.assetPrice.mul(vars.userBalance).div(vars.assetUnit);
+        vars.userBalanceInBaseCurrency = vars.assetPrice.mul(vars.userCollateralBalance).div(vars.assetUnit);
         vars.totalCollateralInBaseCurrency = vars.totalCollateralInBaseCurrency.add(
           vars.userBalanceInBaseCurrency
         );

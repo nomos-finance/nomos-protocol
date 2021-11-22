@@ -19,9 +19,11 @@ library ReserveConfiguration {
   uint256 constant BORROWING_MASK =             0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFBFFFFFFFFFFFFFF; // prettier-ignore
   uint256 constant STABLE_BORROWING_MASK =      0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7FFFFFFFFFFFFFF; // prettier-ignore
   uint256 constant PAUSED_MASK =                0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFFFFFFFFFFF; // prettier-ignore
+  uint256 constant REVOLVING_LOAN_MASK =        0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFDFFFFFFFFFFFFFFF; // prettier-ignore
   uint256 constant RESERVE_FACTOR_MASK =        0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0000FFFFFFFFFFFFFFFF; // prettier-ignore
   uint256 constant BORROW_CAP_MASK =            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF000000000FFFFFFFFFFFFFFFFFFFF; // prettier-ignore
   uint256 constant SUPPLY_CAP_MASK =            0xFFFFFFFFFFFFFFFFFFFFFFFFFF000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFF; // prettier-ignore
+  uint256 constant COLLATERAL_CAP_MASK =        0xFFFFFFFFFFFFFFFFF000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF; // prettier-ignore
 
   /// @dev For the LTV, the start bit is 0 (up to 15), hence no bitshifting is needed
   uint256 constant LIQUIDATION_THRESHOLD_START_BIT_POSITION = 16;
@@ -32,10 +34,12 @@ library ReserveConfiguration {
   uint256 constant BORROWING_ENABLED_START_BIT_POSITION = 58;
   uint256 constant STABLE_BORROWING_ENABLED_START_BIT_POSITION = 59;
   uint256 constant IS_PAUSED_START_BIT_POSITION = 60;
-  // bits 61 62 63 unused yet
+  uint256 constant IS_REVOLVING_LOAN_START_BIT_POSITION = 61;
+  // bits 62 63 unused yet
   uint256 constant RESERVE_FACTOR_START_BIT_POSITION = 64;
   uint256 constant BORROW_CAP_START_BIT_POSITION = 80;
   uint256 constant SUPPLY_CAP_START_BIT_POSITION = 116;
+  uint256 constant COLLATERAL_CAP_START_BIT_POSITION = 152;
 
   uint256 constant MAX_VALID_LTV = 65535;
   uint256 constant MAX_VALID_LIQUIDATION_THRESHOLD = 65535;
@@ -44,6 +48,7 @@ library ReserveConfiguration {
   uint256 constant MAX_VALID_RESERVE_FACTOR = 65535;
   uint256 constant MAX_VALID_BORROW_CAP = 68719476735;
   uint256 constant MAX_VALID_SUPPLY_CAP = 68719476735;
+  uint256 constant MAX_VALID_COLLATERAL_CAP = 68719476735;
 
   /**
    * @dev Sets the Loan to Value of the reserve
@@ -65,15 +70,18 @@ library ReserveConfiguration {
     return self.data & ~LTV_MASK;
   }
 
-    /**
+  /**
    * @dev Gets the Loan to Value of the reserve
    * @param self The reserve configuration
    * @return The loan to value
    **/
-  function getLtvMemory(DataTypes.ReserveConfigurationMap memory self) internal pure returns (uint256) {
+  function getLtvMemory(DataTypes.ReserveConfigurationMap memory self)
+    internal
+    pure
+    returns (uint256)
+  {
     return self.data & ~LTV_MASK;
   }
-
 
   /**
    * @dev Sets the liquidation threshold of the reserve
@@ -288,6 +296,33 @@ library ReserveConfiguration {
   }
 
   /**
+   * @dev Enables or disables revolving loan on the reserve
+   * @param self The reserve configuration
+   * @param enabled True if the revolving loan needs to be enabled, false otherwise
+   **/
+  function setRevolvingLoanEnabled(DataTypes.ReserveConfigurationMap memory self, bool enabled)
+    internal
+    pure
+  {
+    self.data =
+      (self.data & REVOLVING_LOAN_MASK) |
+      (uint256(enabled ? 1 : 0) << IS_REVOLVING_LOAN_START_BIT_POSITION);
+  }
+
+  /**
+   * @dev Gets the revolving loan state of the reserve
+   * @param self The reserve configuration
+   * @return The RevolvingLoan state
+   **/
+  function getRevolvingLoanEnabled(DataTypes.ReserveConfigurationMap storage self)
+    internal
+    view
+    returns (bool)
+  {
+    return (self.data & ~REVOLVING_LOAN_MASK) != 0;
+  }
+
+  /**
    * @dev Sets the reserve factor of the reserve
    * @param self The reserve configuration
    * @param reserveFactor The reserve factor
@@ -384,6 +419,35 @@ library ReserveConfiguration {
   }
 
   /**
+   * @dev Sets the collateral cap of the reserve
+   * @param self The reserve configuration
+   * @param collateralCap The collateralCap cap
+   **/
+  function setCollateralCap(DataTypes.ReserveConfigurationMap memory self, uint256 collateralCap)
+    internal
+    pure
+  {
+    require(collateralCap <= MAX_VALID_COLLATERAL_CAP, Errors.RC_INVALID_COLLATERAL_CAP);
+
+    self.data =
+      (self.data & COLLATERAL_CAP_MASK) |
+      (collateralCap << COLLATERAL_CAP_START_BIT_POSITION);
+  }
+
+  /**
+   * @dev Gets the collateral cap of the reserve
+   * @param self The reserve configuration
+   * @return The collateral cap
+   **/
+  function getCollatealCap(DataTypes.ReserveConfigurationMap storage self)
+    internal
+    view
+    returns (uint256)
+  {
+    return (self.data & ~COLLATERAL_CAP_MASK) >> COLLATERAL_CAP_START_BIT_POSITION;
+  }
+
+  /**
    * @dev Gets the configuration flags of the reserve
    * @param self The reserve configuration
    * @return The state flags representing active, frozen, borrowing enabled, stableRateBorrowing enabled
@@ -440,12 +504,13 @@ library ReserveConfiguration {
   /**
    * @dev Gets the caps  paramters of the reserve from storage
    * @param self The reserve configuration
-   * @return The state params representing  borrow cap and supply cap.
+   * @return The state params representing  borrow cap and supply cap and collateral cap.
    **/
   function getCaps(DataTypes.ReserveConfigurationMap storage self)
     internal
     view
     returns (
+      uint256,
       uint256,
       uint256
     )
@@ -454,7 +519,8 @@ library ReserveConfiguration {
 
     return (
       (dataLocal & ~BORROW_CAP_MASK) >> BORROW_CAP_START_BIT_POSITION,
-      (dataLocal & ~SUPPLY_CAP_MASK) >> SUPPLY_CAP_START_BIT_POSITION
+      (dataLocal & ~SUPPLY_CAP_MASK) >> SUPPLY_CAP_START_BIT_POSITION,
+      (dataLocal & ~COLLATERAL_CAP_MASK) >> COLLATERAL_CAP_START_BIT_POSITION
     );
   }
 
@@ -486,31 +552,34 @@ library ReserveConfiguration {
   /**
    * @dev Gets the caps paramters of the reserve from a memory object
    * @param self The reserve configuration
-   * @return The state params borrow cap and supply cap
+   * @return The state params borrow cap and supply cap and collateral cap
    **/
   function getCapsMemory(DataTypes.ReserveConfigurationMap memory self)
     internal
     pure
     returns (
       uint256,
+      uint256,
       uint256
     )
   {
     return (
       (self.data & ~BORROW_CAP_MASK) >> BORROW_CAP_START_BIT_POSITION,
-      (self.data & ~SUPPLY_CAP_MASK) >> SUPPLY_CAP_START_BIT_POSITION
+      (self.data & ~SUPPLY_CAP_MASK) >> SUPPLY_CAP_START_BIT_POSITION,
+      (self.data & ~COLLATERAL_CAP_MASK) >> COLLATERAL_CAP_START_BIT_POSITION
     );
   }
 
   /**
    * @dev Gets the configuration flags of the reserve from a memory object
    * @param self The reserve configuration
-   * @return The state flags representing active, frozen, borrowing enabled, stableRateBorrowing enabled
+   * @return The state flags representing active, frozen, borrowing enabled, stableRateBorrowing enabled, revolcing loan enabled
    **/
   function getFlagsMemory(DataTypes.ReserveConfigurationMap memory self)
     internal
     pure
     returns (
+      bool,
       bool,
       bool,
       bool,
@@ -523,7 +592,8 @@ library ReserveConfiguration {
       (self.data & ~FROZEN_MASK) != 0,
       (self.data & ~BORROWING_MASK) != 0,
       (self.data & ~STABLE_BORROWING_MASK) != 0,
-      (self.data & ~PAUSED_MASK) != 0
+      (self.data & ~PAUSED_MASK) != 0,
+      (self.data & ~REVOLVING_LOAN_MASK) != 0
     );
   }
 
@@ -551,5 +621,18 @@ library ReserveConfiguration {
     returns (uint256)
   {
     return (self.data & ~BORROW_CAP_MASK) >> BORROW_CAP_START_BIT_POSITION;
+  }
+
+  /**
+   * @dev Gets the collateral cap of the reserve from a memory object
+   * @param self The reserve configuration
+   * @return The collateral cap
+   **/
+  function getCollatealCapMemory(DataTypes.ReserveConfigurationMap memory self)
+    internal
+    pure
+    returns (uint256)
+  {
+    return (self.data & ~COLLATERAL_CAP_MASK) >> COLLATERAL_CAP_START_BIT_POSITION;
   }
 }

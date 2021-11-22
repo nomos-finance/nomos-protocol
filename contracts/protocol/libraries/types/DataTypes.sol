@@ -39,10 +39,12 @@ library DataTypes {
     //bit 58: borrowing is enabled
     //bit 59: stable rate borrowing enabled
     //bit 60: asset is paused
-    //bit 61-63: reserved
+    //bit 61: asset revolving loan enabled
+    //bit 62-63: reserved
     //bit 64-79: reserve factor
     //bit 80-115 borrow cap, borrowCap == 0 => disabled
     //bit 116-151 supply cap, supplyCap == 0 => disabled
+    //bit 152-185 collateral cap, collateralCap == 0 => disabled
     uint256 data;
   }
 

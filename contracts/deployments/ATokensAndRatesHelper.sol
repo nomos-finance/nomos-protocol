@@ -33,8 +33,10 @@ contract ATokensAndRatesHelper is Ownable {
     uint256 reserveFactor;
     uint256 borrowCap;
     uint256 supplyCap;
+    uint256 collateralCap;
     bool stableBorrowingEnabled;
     bool borrowingEnabled;
+    bool revolvingLoanEnabled;
   }
 
   constructor(
@@ -76,17 +78,20 @@ contract ATokensAndRatesHelper is Ownable {
         inputParams[i].asset,
         inputParams[i].baseLTV,
         inputParams[i].liquidationThreshold,
-        inputParams[i].liquidationBonus
+        inputParams[i].liquidationBonus,
+        inputParams[i].collateralCap
       );
 
       if (inputParams[i].borrowingEnabled) {
         configurator.enableBorrowingOnReserve(
           inputParams[i].asset,
           inputParams[i].borrowCap,
-          inputParams[i].stableBorrowingEnabled
+          inputParams[i].stableBorrowingEnabled,
+          inputParams[i].revolvingLoanEnabled
         );
       }
       configurator.setSupplyCap(inputParams[i].asset, inputParams[i].supplyCap);
+      configurator.setCollateralCap(inputParams[i].asset, inputParams[i].collateralCap);
       configurator.setReserveFactor(inputParams[i].asset, inputParams[i].reserveFactor);
     }
   }

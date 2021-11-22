@@ -24,7 +24,6 @@ contract UiPoolDataProvider is IUiPoolDataProvider {
   using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
   using UserConfiguration for DataTypes.UserConfigurationMap;
 
-  address public constant MOCK_USD_ADDRESS = 0x10F7Fc1F91Ba351f9C629c5947AD69bD03C05b96;
   IAaveIncentivesController public immutable incentivesController;
   IPriceOracleGetter public immutable oracle;
 
@@ -62,7 +61,6 @@ contract UiPoolDataProvider is IUiPoolDataProvider {
     returns (
       AggregatedReserveData[] memory,
       UserReserveData[] memory,
-      uint256,
       uint256
     )
   {
@@ -118,13 +116,16 @@ contract UiPoolDataProvider is IUiPoolDataProvider {
         reserveData.decimals,
         reserveData.reserveFactor
       ) = baseData.configuration.getParamsMemory();
-      (reserveData.borrowCap, reserveData.supplyCap) = baseData.configuration.getCapsMemory();
+      (reserveData.borrowCap, reserveData.supplyCap, reserveData.collateralCap) = baseData
+        .configuration
+        .getCapsMemory();
       (
         reserveData.isActive,
         reserveData.isFrozen,
         reserveData.borrowingEnabled,
         reserveData.stableBorrowRateEnabled,
-        reserveData.isPaused
+        reserveData.isPaused,
+        reserveData.revolvingLoanEnabled
       ) = baseData.configuration.getFlagsMemory();
       reserveData.usageAsCollateralEnabled = reserveData.baseLTVasCollateral != 0;
       (
@@ -211,7 +212,6 @@ contract UiPoolDataProvider is IUiPoolDataProvider {
     return (
       reservesData,
       userReservesData,
-      oracle.getAssetPrice(MOCK_USD_ADDRESS),
       address(incentivesController) != address(0)
         ? incentivesController.getUserUnclaimedRewards(user)
         : 0

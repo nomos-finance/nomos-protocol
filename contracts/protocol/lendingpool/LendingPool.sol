@@ -449,7 +449,7 @@ contract LendingPool is VersionedInitializable, ILendingPool, LendingPoolStorage
       if (accruedToTreasury != 0) {
         uint256 normalizedIncome = reserve.getNormalizedIncome();
         uint256 amountToMint = accruedToTreasury.rayMul(normalizedIncome);
-        IAToken(reserve.aTokenAddress).mintToTreasury(amountToMint, normalizedIncome);
+        IAToken(reserve.aTokenAddress).mintToTreasury(amountToMint, normalizedIncome, reserve.configuration.getCollatealCap());
 
         reserve.accruedToTreasury = 0;
         emit MintedToTreasury(assetAddress, amountToMint);
@@ -817,7 +817,12 @@ contract LendingPool is VersionedInitializable, ILendingPool, LendingPoolStorage
     IERC20(asset).safeTransferFrom(msg.sender, reserveCache.aTokenAddress, amount);
 
     bool isFirstDeposit =
-      IAToken(reserveCache.aTokenAddress).mint(onBehalfOf, amount, reserveCache.nextLiquidityIndex);
+      IAToken(reserveCache.aTokenAddress).mint(
+        onBehalfOf, 
+        amount, 
+        reserveCache.nextLiquidityIndex, 
+        reserve.configuration.getCollatealCap()
+      );
 
     if (isFirstDeposit) {
       _usersConfig[onBehalfOf].setUsingAsCollateral(reserve.id, true);

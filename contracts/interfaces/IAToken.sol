@@ -20,12 +20,14 @@ interface IAToken is IERC20, IScaledBalanceToken, IInitializableAToken {
    * @param user The address receiving the minted tokens
    * @param amount The amount of tokens getting minted
    * @param index The new liquidity index of the reserve
+   * @param collateralCap The collateralCap of the reserve
    * @return `true` if the the previous balance of the user was 0
    */
   function mint(
     address user,
     uint256 amount,
-    uint256 index
+    uint256 index,
+    uint256 collateralCap
   ) external returns (bool);
 
   /**
@@ -64,8 +66,13 @@ interface IAToken is IERC20, IScaledBalanceToken, IInitializableAToken {
    * @dev Mints aTokens to the reserve treasury
    * @param amount The amount of tokens getting minted
    * @param index The new liquidity index of the reserve
+   * @param collateralCap The collateralCap of the reserve
    */
-  function mintToTreasury(uint256 amount, uint256 index) external;
+  function mintToTreasury(
+    uint256 amount,
+    uint256 index,
+    uint256 collateralCap
+  ) external;
 
   /**
    * @dev Transfers aTokens in the event of a borrow being liquidated, in case the liquidators reclaims the aToken
@@ -125,4 +132,15 @@ interface IAToken is IERC20, IScaledBalanceToken, IInitializableAToken {
    * @dev Returns the address of the underlying asset of this aToken (E.g. WETH for aWETH)
    **/
   function UNDERLYING_ASSET_ADDRESS() external view returns (address);
+
+  /**
+   * @dev Calculates the collateral balance of the user
+   * @param user The user whose balance is calculated
+   **/
+  function balanceOfCollateral(address user) external view returns (uint256);
+
+  /**
+   * @dev The total supply of the collateral
+   **/
+  function totalSupplyOfCollateral() external view returns (uint256);
 }

@@ -17,12 +17,14 @@ interface IUiPoolDataProvider {
     uint256 reserveFactor;
     uint256 borrowCap;
     uint256 supplyCap;
+    uint256 collateralCap;
     bool usageAsCollateralEnabled;
     bool borrowingEnabled;
     bool stableBorrowRateEnabled;
     bool isActive;
     bool isFrozen;
     bool isPaused;
+    bool revolvingLoanEnabled;
     // base data
     uint128 liquidityIndex;
     uint128 variableBorrowIndex;
@@ -79,7 +81,6 @@ interface IUiPoolDataProvider {
     returns (
       AggregatedReserveData[] memory,
       UserReserveData[] memory,
-      uint256,
       uint256
     );
 }

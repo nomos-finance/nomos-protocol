@@ -41,6 +41,8 @@ contract AToken is
   address internal _treasury;
   address internal _underlyingAsset;
   IAaveIncentivesController internal _incentivesController;
+  uint256 internal _collateralTotalSupplyScaled;
+  mapping(address => uint256) internal _collateralBalancesScaled;
 
   modifier onlyLendingPool {
     require(_msgSender() == address(_pool), Errors.CT_CALLER_MUST_BE_LENDING_POOL);
@@ -125,7 +127,23 @@ contract AToken is
   ) external override onlyLendingPool {
     uint256 amountScaled = amount.rayDiv(index);
     require(amountScaled != 0, Errors.CT_INVALID_BURN_AMOUNT);
+    uint256 oldBalancesScaled = super.balanceOf(user);
+    uint256 oldCollateralBalancesScaled = _collateralBalancesScaled[user];
     _burn(user, amountScaled);
+
+    uint256 subUserBalanceScale = oldBalancesScaled.sub(oldCollateralBalancesScaled);
+
+    if (subUserBalanceScale == 0) {
+      _collateralBalancesScaled[user] = _collateralBalancesScaled[user].sub(amountScaled);
+      _collateralTotalSupplyScaled = _collateralTotalSupplyScaled.sub(amountScaled);
+    } else if (amountScaled > subUserBalanceScale) {
+      _collateralBalancesScaled[user] = _collateralBalancesScaled[user].sub(
+        amountScaled.sub(subUserBalanceScale)
+      );
+      _collateralTotalSupplyScaled = _collateralTotalSupplyScaled.sub(
+        amountScaled.sub(subUserBalanceScale)
+      );
+    }
 
     IERC20(_underlyingAsset).safeTransfer(receiverOfUnderlying, amount);
 
@@ -139,18 +157,41 @@ contract AToken is
    * @param user The address receiving the minted tokens
    * @param amount The amount of tokens getting minted
    * @param index The new liquidity index of the reserve
+   * @param collateralCap The collateralCap of the reserve
    * @return `true` if the the previous balance of the user was 0
    */
   function mint(
     address user,
     uint256 amount,
-    uint256 index
+    uint256 index,
+    uint256 collateralCap
   ) external override onlyLendingPool returns (bool) {
     uint256 previousBalance = super.balanceOf(user);
 
     uint256 amountScaled = amount.rayDiv(index);
+    uint256 totalCollateralSupply = this.totalSupplyOfCollateral();
     require(amountScaled != 0, Errors.CT_INVALID_MINT_AMOUNT);
     _mint(user, amountScaled);
+
+    uint256 realCollateralCap = collateralCap.mul(10**uint256(super.decimals()));
+    uint256 oldCollateralBalancesScaled = _collateralBalancesScaled[user];
+    uint256 subBalance = previousBalance.sub(oldCollateralBalancesScaled).rayMul(index);
+
+    if (
+      collateralCap == 0 || totalCollateralSupply.add(amount).add(subBalance) <= realCollateralCap
+    ) {
+      _collateralBalancesScaled[user] = super.balanceOf(user);
+      _collateralTotalSupplyScaled = _collateralTotalSupplyScaled.add(
+        super.balanceOf(user).sub(oldCollateralBalancesScaled)
+      );
+    } else if (totalCollateralSupply < realCollateralCap) {
+      _collateralBalancesScaled[user] = _collateralBalancesScaled[user].add(
+        realCollateralCap.sub(totalCollateralSupply).rayDiv(index)
+      );
+      _collateralTotalSupplyScaled = _collateralTotalSupplyScaled.add(
+        realCollateralCap.sub(totalCollateralSupply).rayDiv(index)
+      );
+    }
 
     emit Transfer(address(0), user, amount);
     emit Mint(user, amount, index);
@@ -163,19 +204,46 @@ contract AToken is
    * - Only callable by the LendingPool
    * @param amount The amount of tokens getting minted
    * @param index The new liquidity index of the reserve
+   * @param collateralCap The collateralCap of the reserve
    */
-  function mintToTreasury(uint256 amount, uint256 index) external override onlyLendingPool {
+  function mintToTreasury(
+    uint256 amount,
+    uint256 index,
+    uint256 collateralCap
+  ) external override onlyLendingPool {
     if (amount == 0) {
       return;
     }
 
+    uint256 totalCollateralSupply = this.totalSupplyOfCollateral();
     address treasury = _treasury;
+
+    uint256 previousBalance = super.balanceOf(treasury);
 
     // Compared to the normal mint, we don't check for rounding errors.
     // The amount to mint can easily be very small since it is a fraction of the interest ccrued.
     // In that case, the treasury will experience a (very small) loss, but it
     // wont cause potentially valid transactions to fail.
     _mint(treasury, amount.rayDiv(index));
+    uint256 oldCollateralBalancesScaled = _collateralBalancesScaled[treasury];
+    uint256 subBalance = previousBalance.sub(oldCollateralBalancesScaled).rayMul(index);
+
+    uint256 realCollateralCap = collateralCap.mul(10**uint256(super.decimals()));
+    if (
+      collateralCap == 0 || totalCollateralSupply.add(amount).add(subBalance) <= realCollateralCap
+    ) {
+      _collateralBalancesScaled[treasury] = super.balanceOf(treasury);
+      _collateralTotalSupplyScaled = _collateralTotalSupplyScaled.add(
+        super.balanceOf(treasury).sub(oldCollateralBalancesScaled)
+      );
+    } else if (totalCollateralSupply < realCollateralCap) {
+      _collateralBalancesScaled[treasury] = _collateralBalancesScaled[treasury].add(
+        realCollateralCap.sub(totalCollateralSupply).rayDiv(index)
+      );
+      _collateralTotalSupplyScaled = _collateralTotalSupplyScaled.add(
+        realCollateralCap.sub(totalCollateralSupply).rayDiv(index)
+      );
+    }
 
     emit Transfer(address(0), treasury, amount);
     emit Mint(treasury, amount, index);
@@ -273,7 +341,7 @@ contract AToken is
   /**
    * @dev Returns the address of the underlying asset of this aToken (E.g. WETH for aWETH)
    **/
-  function UNDERLYING_ASSET_ADDRESS() public override view returns (address) {
+  function UNDERLYING_ASSET_ADDRESS() public view override returns (address) {
     return _underlyingAsset;
   }
 
@@ -300,7 +368,7 @@ contract AToken is
 
   /**
    * @dev Transfers the underlying asset to `target`. Used by the LendingPool to transfer
-   * assets in borrow(), withdraw() and flashLoan()
+   * assets in borrow() and flashLoan()
    * @param target The recipient of the aTokens
    * @param amount The amount getting transferred
    * @return The amount transferred
@@ -377,11 +445,26 @@ contract AToken is
     ILendingPool pool = _pool;
 
     uint256 index = pool.getReserveNormalizedIncome(underlyingAsset);
-
+    uint256 amountScaled = amount.rayDiv(index);
     uint256 fromBalanceBefore = super.balanceOf(from).rayMul(index);
     uint256 toBalanceBefore = super.balanceOf(to).rayMul(index);
 
-    super._transfer(from, to, amount.rayDiv(index));
+    uint256 fromBalanceScale = super.balanceOf(from);
+    uint256 subfromBalanceScale = fromBalanceScale.sub(_collateralBalancesScaled[from]);
+
+    super._transfer(from, to, amountScaled);
+
+    if (subfromBalanceScale == 0) {
+      _collateralBalancesScaled[from] = _collateralBalancesScaled[from].sub(amountScaled);
+      _collateralBalancesScaled[to] = _collateralBalancesScaled[to].add(amountScaled);
+    } else if (amountScaled > subfromBalanceScale) {
+      _collateralBalancesScaled[from] = _collateralBalancesScaled[from].sub(
+        amountScaled.sub(subfromBalanceScale)
+      );
+      _collateralBalancesScaled[to] = _collateralBalancesScaled[to].add(
+        amountScaled.sub(subfromBalanceScale)
+      );
+    }
 
     if (validate) {
       pool.finalizeTransfer(underlyingAsset, from, to, amount, fromBalanceBefore, toBalanceBefore);
@@ -402,5 +485,21 @@ contract AToken is
     uint256 amount
   ) internal override {
     _transfer(from, to, amount, true);
+  }
+
+  /**
+   * @dev The balance of the collateral
+   * @param account The source address
+   **/
+  function balanceOfCollateral(address account) public view override returns (uint256) {
+    return
+      _collateralBalancesScaled[account].rayMul(_pool.getReserveNormalizedIncome(_underlyingAsset));
+  }
+
+  /**
+   * @dev The total supply of the collateral
+   **/
+  function totalSupplyOfCollateral() public view override returns (uint256) {
+    return _collateralTotalSupplyScaled.rayMul(_pool.getReserveNormalizedIncome(_underlyingAsset));
   }
 }

@@ -87,7 +87,7 @@ contract AaveProtocolDataProvider {
     (ltv, liquidationThreshold, liquidationBonus, decimals, reserveFactor) = configuration
       .getParamsMemory();
 
-    (isActive, isFrozen, borrowingEnabled, stableBorrowRateEnabled, ) = configuration
+    (isActive, isFrozen, borrowingEnabled, stableBorrowRateEnabled, , ) = configuration
       .getFlagsMemory();
 
     usageAsCollateralEnabled = liquidationThreshold > 0;
@@ -98,16 +98,23 @@ contract AaveProtocolDataProvider {
     view
     returns (
       uint256 borrowCap,
-      uint256 supplyCap
+      uint256 supplyCap,
+      uint256 collateralCap
     )
   {
-    (borrowCap, supplyCap) = ILendingPool(ADDRESSES_PROVIDER.getLendingPool())
+    (borrowCap, supplyCap, collateralCap) = ILendingPool(ADDRESSES_PROVIDER.getLendingPool())
       .getConfiguration(asset)
       .getCapsMemory();
   }
 
   function getPaused(address asset) external view returns (bool isPaused) {
-    (, , , , isPaused) = ILendingPool(ADDRESSES_PROVIDER.getLendingPool())
+    (, , , , isPaused, ) = ILendingPool(ADDRESSES_PROVIDER.getLendingPool())
+      .getConfiguration(asset)
+      .getFlagsMemory();
+  }
+
+  function getRevolvingLoan(address asset) external view returns (bool revolvingLoanEnabled) {
+    (, , , , , revolvingLoanEnabled) = ILendingPool(ADDRESSES_PROVIDER.getLendingPool())
       .getConfiguration(asset)
       .getFlagsMemory();
   }

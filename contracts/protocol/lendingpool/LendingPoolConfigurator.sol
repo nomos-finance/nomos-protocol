@@ -268,13 +268,15 @@ contract LendingPoolConfigurator is VersionedInitializable, ILendingPoolConfigur
   function enableBorrowingOnReserve(
     address asset,
     uint256 borrowCap,
-    bool stableBorrowRateEnabled
+    bool stableBorrowRateEnabled,
+    bool revolvingLoanEnabled
   ) external override onlyRiskOrPoolAdmins {
     DataTypes.ReserveConfigurationMap memory currentConfig = _pool.getConfiguration(asset);
 
     currentConfig.setBorrowingEnabled(true);
     currentConfig.setBorrowCap(borrowCap);
     currentConfig.setStableRateBorrowingEnabled(stableBorrowRateEnabled);
+    currentConfig.setRevolvingLoanEnabled(revolvingLoanEnabled);
 
     _pool.setConfiguration(asset, currentConfig.data);
 
@@ -296,7 +298,8 @@ contract LendingPoolConfigurator is VersionedInitializable, ILendingPoolConfigur
     address asset,
     uint256 ltv,
     uint256 liquidationThreshold,
-    uint256 liquidationBonus
+    uint256 liquidationBonus,
+    uint256 collateralCap
   ) external override onlyRiskOrPoolAdmins {
     DataTypes.ReserveConfigurationMap memory currentConfig = _pool.getConfiguration(asset);
 
@@ -330,6 +333,7 @@ contract LendingPoolConfigurator is VersionedInitializable, ILendingPoolConfigur
     currentConfig.setLtv(ltv);
     currentConfig.setLiquidationThreshold(liquidationThreshold);
     currentConfig.setLiquidationBonus(liquidationBonus);
+    currentConfig.setCollateralCap(collateralCap);
 
     _pool.setConfiguration(asset, currentConfig.data);
 
@@ -356,6 +360,28 @@ contract LendingPoolConfigurator is VersionedInitializable, ILendingPoolConfigur
     _pool.setConfiguration(asset, currentConfig.data);
 
     emit StableRateDisabledOnReserve(asset);
+  }
+
+  /// @inheritdoc ILendingPoolConfigurator
+  function enableRevolvingLoan(address asset) external override onlyRiskOrPoolAdmins {
+    DataTypes.ReserveConfigurationMap memory currentConfig = _pool.getConfiguration(asset);
+
+    currentConfig.setRevolvingLoanEnabled(true);
+
+    _pool.setConfiguration(asset, currentConfig.data);
+
+    emit RevolvingLoanEnabledOnReserve(asset);
+  }
+
+  /// @inheritdoc ILendingPoolConfigurator
+  function disableRevolvingLoan(address asset) external override onlyRiskOrPoolAdmins {
+    DataTypes.ReserveConfigurationMap memory currentConfig = _pool.getConfiguration(asset);
+
+    currentConfig.setRevolvingLoanEnabled(false);
+
+    _pool.setConfiguration(asset, currentConfig.data);
+
+    emit RevolvingLoanDisabledOnReserve(asset);
   }
 
   /// @inheritdoc ILendingPoolConfigurator
@@ -457,6 +483,21 @@ contract LendingPoolConfigurator is VersionedInitializable, ILendingPoolConfigur
   }
 
   ///@inheritdoc ILendingPoolConfigurator
+  function setCollateralCap(address asset, uint256 collateralCap)
+    external
+    override
+    onlyRiskOrPoolAdmins
+  {
+    DataTypes.ReserveConfigurationMap memory currentConfig = _pool.getConfiguration(asset);
+
+    currentConfig.setCollateralCap(collateralCap);
+
+    _pool.setConfiguration(asset, currentConfig.data);
+
+    emit CollateralCapChanged(asset, collateralCap);
+  }
+
+  ///@inheritdoc ILendingPoolConfigurator
   function setReserveInterestRateStrategyAddress(address asset, address rateStrategyAddress)
     external
     override
@@ -471,7 +512,8 @@ contract LendingPoolConfigurator is VersionedInitializable, ILendingPoolConfigur
     address[] memory reserves = _pool.getReservesList();
 
     for (uint256 i = 0; i < reserves.length; i++) {
-      if (reserves[i] != address(0)) { //might happen is a reserve was dropped
+      if (reserves[i] != address(0)) {
+        //might happen is a reserve was dropped
         setReservePause(reserves[i], paused);
       }
     }

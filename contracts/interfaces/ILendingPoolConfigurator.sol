@@ -97,6 +97,18 @@ interface ILendingPoolConfigurator {
   event StableRateDisabledOnReserve(address indexed asset);
 
   /**
+   * @dev Emitted when revolving loan is enabled on a reserve
+   * @param asset The address of the underlying asset of the reserve
+   **/
+  event RevolvingLoanEnabledOnReserve(address indexed asset);
+
+  /**
+   * @dev Emitted when revolving loan is disabled on a reserve
+   * @param asset The address of the underlying asset of the reserve
+   **/
+  event RevolvingLoanDisabledOnReserve(address indexed asset);
+
+  /**
    * @dev Emitted when a reserve is activated
    * @param asset The address of the underlying asset of the reserve
    **/
@@ -158,6 +170,13 @@ interface ILendingPoolConfigurator {
    * @param supplyCap The new supply cap
    **/
   event SupplyCapChanged(address indexed asset, uint256 supplyCap);
+
+  /**
+   * @dev Emitted when the collateral cap of a reserve is updated
+   * @param asset The address of the underlying asset of the reserve
+   * @param collateralCap The new collateral cap
+   **/
+  event CollateralCapChanged(address indexed asset, uint256 collateralCap);
 
   /**
    * @dev Emitted when the reserve decimals are updated
@@ -274,11 +293,13 @@ interface ILendingPoolConfigurator {
    * @param asset The address of the underlying asset of the reserve
    * @param borrowCap The borrow cap for this specific asset, in absolute units of tokens
    * @param stableBorrowRateEnabled True if stable borrow rate needs to be enabled by default on this reserve
+   * @param revolvingLoanEnabled revolving loan enabled by default on this reserve
    **/
   function enableBorrowingOnReserve(
     address asset,
     uint256 borrowCap,
-    bool stableBorrowRateEnabled
+    bool stableBorrowRateEnabled,
+    bool revolvingLoanEnabled
   ) external;
 
   /**
@@ -294,13 +315,15 @@ interface ILendingPoolConfigurator {
    * @param ltv The loan to value of the asset when used as collateral
    * @param liquidationThreshold The threshold at which loans using this asset as collateral will be considered undercollateralized
    * @param liquidationBonus The bonus liquidators receive to liquidate this asset. The values is always above 100%. A value of 105%
+   * @param collateralCap The collateral cap for the collateral reserve. If cap is reached, can't borrow
    * means the liquidator will receive a 5% bonus
    **/
   function configureReserveAsCollateral(
     address asset,
     uint256 ltv,
     uint256 liquidationThreshold,
-    uint256 liquidationBonus
+    uint256 liquidationBonus,
+    uint256 collateralCap
   ) external;
 
   /**
@@ -314,6 +337,18 @@ interface ILendingPoolConfigurator {
    * @param asset The address of the underlying asset of the reserve
    **/
   function disableReserveStableRate(address asset) external;
+
+  /**
+   * @dev Enable revolving loan on a reserve
+   * @param asset The address of the underlying asset of the reserve
+   **/
+  function enableRevolvingLoan(address asset) external;
+
+  /**
+   * @dev Disable revolving loan  on a reserve
+   * @param asset The address of the underlying asset of the reserve
+   **/
+  function disableRevolvingLoan(address asset) external;
 
   /**
    * @dev Activates a reserve
@@ -382,6 +417,13 @@ interface ILendingPoolConfigurator {
    * @param supplyCap The new supply of the reserve
    **/
   function setSupplyCap(address asset, uint256 supplyCap) external;
+
+  /**
+   * @dev Updates the collateral cap of a reserve
+   * @param asset The address of the underlying asset of the reserve
+   * @param collateralCap The new collateral cap of the reserve
+   **/
+  function setCollateralCap(address asset, uint256 collateralCap) external;
 
   /**
    * @dev Registers a new admin with rights on risk related configurations

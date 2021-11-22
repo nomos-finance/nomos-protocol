@@ -18,6 +18,7 @@ import {PercentageMath} from '../libraries/math/PercentageMath.sol';
 import {SafeERC20} from '../../dependencies/openzeppelin/contracts/SafeERC20.sol';
 import {Errors} from '../libraries/helpers/Errors.sol';
 import {ValidationLogic} from '../libraries/logic/ValidationLogic.sol';
+import {GenericLogic} from '../libraries/logic/GenericLogic.sol';
 import {DataTypes} from '../libraries/types/DataTypes.sol';
 import {LendingPoolStorage} from './LendingPoolStorage.sol';
 
@@ -39,7 +40,10 @@ contract LendingPoolCollateralManager is
   using PercentageMath for uint256;
   using ReserveLogic for DataTypes.ReserveCache;
 
-  uint256 internal constant LIQUIDATION_CLOSE_FACTOR_PERCENT = 5000;
+  uint256 public constant DEFAULT_LIQUIDATION_CLOSE_FACTOR = 5000;
+  uint256 public constant MAX_LIQUIDATION_CLOSE_FACTOR = 10000;
+  uint256 public constant LIQUIDATION_DEBT_ASSET_THRESHOLD = 100 * 1e8;
+  uint256 public constant CLOSE_FACTOR_HF_THRESHOLD = 0.95 * 1e18;
 
   struct LiquidationCallLocalVars {
     uint256 userCollateralBalance;
@@ -54,6 +58,7 @@ contract LendingPoolCollateralManager is
     uint256 debtAmountNeeded;
     uint256 healthFactor;
     uint256 liquidatorPreviousATokenBalance;
+    uint256 closeFactor;
     IAToken collateralAtoken;
     IPriceOracleGetter oracle;
     bool isCollateralEnabled;
@@ -96,20 +101,24 @@ contract LendingPoolCollateralManager is
 
     LiquidationCallLocalVars memory vars;
 
-
     (vars.userStableDebt, vars.userVariableDebt) = Helpers.getUserCurrentDebt(user, debtReserve);
-    vars.oracle =  IPriceOracleGetter(_addressesProvider.getPriceOracle());
+    vars.oracle = IPriceOracleGetter(_addressesProvider.getPriceOracle());
 
-    (vars.errorCode, vars.errorMsg) = ValidationLogic.validateLiquidationCall(
-      collateralReserve,
-      debtReserveCache,
-      vars.userStableDebt.add(vars.userVariableDebt),
+    (, , , , vars.healthFactor, ) = GenericLogic.calculateUserAccountData(
       user,
       _reserves,
       userConfig,
       _reservesList,
       _reservesCount,
       address(vars.oracle)
+    );
+
+    (vars.errorCode, vars.errorMsg) = ValidationLogic.validateLiquidationCall(
+      collateralReserve,
+      debtReserveCache,
+      vars.userStableDebt.add(vars.userVariableDebt),
+      userConfig,
+      vars.healthFactor
     );
 
     if (Errors.CollateralManagerErrors(vars.errorCode) != Errors.CollateralManagerErrors.NO_ERROR) {
@@ -120,8 +129,22 @@ contract LendingPoolCollateralManager is
 
     vars.userCollateralBalance = vars.collateralAtoken.balanceOf(user);
 
+    uint256 debtAssetValue =
+      IPriceOracleGetter(vars.oracle).getAssetPrice(debtAsset).mul(
+        vars.userStableDebt.add(vars.userVariableDebt)
+      );
+
+    if (
+      vars.healthFactor <= CLOSE_FACTOR_HF_THRESHOLD ||
+      debtAssetValue <= LIQUIDATION_DEBT_ASSET_THRESHOLD
+    ) {
+      vars.closeFactor = MAX_LIQUIDATION_CLOSE_FACTOR;
+    } else {
+      vars.closeFactor = DEFAULT_LIQUIDATION_CLOSE_FACTOR;
+    }
+
     vars.maxLiquidatableDebt = vars.userStableDebt.add(vars.userVariableDebt).percentMul(
-      LIQUIDATION_CLOSE_FACTOR_PERCENT
+      vars.closeFactor
     );
 
     vars.actualDebtToLiquidate = debtToCover > vars.maxLiquidatableDebt
@@ -258,6 +281,8 @@ contract LendingPoolCollateralManager is
     uint256 maxAmountCollateralToLiquidate;
     uint256 debtAssetDecimals;
     uint256 collateralDecimals;
+    uint256 collateralAmount;
+    uint256 debtAmountNeeded;
   }
 
   /**
@@ -284,9 +309,6 @@ contract LendingPoolCollateralManager is
     uint256 userCollateralBalance,
     IPriceOracleGetter oracle
   ) internal view returns (uint256, uint256) {
-    uint256 collateralAmount = 0;
-    uint256 debtAmountNeeded = 0;
-
     AvailableCollateralToLiquidateLocalVars memory vars;
 
     vars.collateralPrice = oracle.getAssetPrice(collateralAsset);
@@ -307,17 +329,17 @@ contract LendingPoolCollateralManager is
       .div(vars.collateralPrice.mul(10**vars.debtAssetDecimals));
 
     if (vars.maxAmountCollateralToLiquidate > userCollateralBalance) {
-      collateralAmount = userCollateralBalance;
-      debtAmountNeeded = vars
+      vars.collateralAmount = userCollateralBalance;
+      vars.debtAmountNeeded = vars
         .collateralPrice
-        .mul(collateralAmount)
+        .mul(vars.collateralAmount)
         .mul(10**vars.debtAssetDecimals)
         .div(vars.debtAssetPrice.mul(10**vars.collateralDecimals))
         .percentDiv(vars.liquidationBonus);
     } else {
-      collateralAmount = vars.maxAmountCollateralToLiquidate;
-      debtAmountNeeded = debtToCover;
+      vars.collateralAmount = vars.maxAmountCollateralToLiquidate;
+      vars.debtAmountNeeded = debtToCover;
     }
-    return (collateralAmount, debtAmountNeeded);
+    return (vars.collateralAmount, vars.debtAmountNeeded);
   }
 }
